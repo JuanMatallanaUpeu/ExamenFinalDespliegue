@@ -1,0 +1,45 @@
+name: Build & Deploy Micro Product App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build JAR with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Copy project to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "." 
+          target: "~/deploy-micro-product"
+
+      - name: Deploy on Docker (remote)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ~/deploy-micro-product
+            docker build -t micro-product-app .
+            docker stop micro-product-app || true
+            docker rm micro-product-app || true
+            docker run -d --name micro-product-app -p 8086:8086 micro-product-app
