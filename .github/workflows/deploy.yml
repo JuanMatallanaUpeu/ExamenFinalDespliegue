@@ -1,4 +1,4 @@
-name: Build & Deploy Micro Product App
+name: 🚀 CI/CD con SonarQube y Docker
 
 on:
   push:
@@ -6,40 +6,52 @@ on:
       - main
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
+  build-analyze-deploy:
+    name: 🔁 Build + Análisis + Despliegue
+    runs-on: self-hosted
 
     steps:
-      - name: Checkout code
+      - name: 📥 Paso 1 - Clonar repositorio
         uses: actions/checkout@v3
 
-      - name: Set up JDK 17
+      - name: ☕ Paso 2 - Instalar Java y Maven
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
+          cache: maven
 
-      - name: Build JAR with Maven
-        run: mvn clean package -DskipTests
+      - name: 🧪 Paso 3 - Compilar con Maven
+        run: |
+          echo "📦 Compilando proyecto..."
+          mvn clean package -DskipTests
+          echo "✅ Build completado."
 
-      - name: Copy project to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "." 
-          target: "~/deploy-micro-product"
+      - name: 📊 Paso 4 - Análisis con SonarQube
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          echo "🔍 Ejecutando análisis SonarQube..."
+          mvn sonar:sonar \
+            -Dsonar.projectKey=lpapp \
+            -Dsonar.projectName=lpapp \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.login=$SONAR_TOKEN
+          echo "✅ Análisis completado."
 
-      - name: Deploy on Docker (remote)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd ~/deploy-micro-product
-            docker build -t micro-product-app .
-            docker stop micro-product-app || true
-            docker rm micro-product-app || true
-            docker run -d --name micro-product-app -p 8086:8086 micro-product-app
+      - name: 🐳 Paso 5 - Desplegar con Docker Compose
+        run: |
+          echo "🧹 Apagando contenedores anteriores si existen..."
+          docker compose -f docker/docker-compose.yml down -v --remove-orphans || echo "⚠ No se pudo bajar contenedores"
+
+          echo "🚀 Iniciando nuevo despliegue..."
+          docker compose -f docker/docker-compose.yml up -d --build || echo "❌ Error en docker-compose up"
+
+          echo "⏳ Esperando 10 segundos..."
+          sleep 10
+
+          echo "📋 Contenedores activos:"
+          docker ps
+
+          echo "📝 Logs recientes del contenedor product_app_2025:"
+          docker logs --tail=50 product_app_2025 || echo "⚠ No se pudo obtener logs"
